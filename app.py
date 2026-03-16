@@ -1,70 +1,90 @@
 import random
 import streamlit as st
-
-def get_range_for_difficulty(difficulty: str):
-    if difficulty == "Easy":
-        return 0, 20
-    if difficulty == "Normal":
-        return 1, 100
-    if difficulty == "Hard":
-        return 1, 50
-    return 1, 100
-
-
-def parse_guess(raw: str):
-    if raw is None:
-        return False, None, "Enter a guess."
-
-    if raw == "":
-        return False, None, "Enter a guess."
-
-    try:
-        if "." in raw:
-            value = int(float(raw))
-        else:
-            value = int(raw)
-    except Exception:
-        return False, None, "That is not a number."
-
-    return True, value, None
-
-
-def check_guess(guess, secret):
-    if guess == secret:
-        return "Win", "🎉 Correct!"
-
-    try:
-        if guess > secret:
-            return "Too High", "📈 Go HIGHER!"
-        else:
-            return "Too Low", "📉 Go LOWER!"
-    except TypeError:
-        g = str(guess)
-        if g == secret:
-            return "Win", "🎉 Correct!"
-        if g > secret:
-            return "Too High", "📈 Go HIGHER!"
-        return "Too Low", "📉 Go LOWER!"
-
-
-def update_score(current_score: int, outcome: str, attempt_number: int):
-    if outcome == "Win":
-        points = 100 - 10 * (attempt_number + 1)
-        if points < 10:
-            points = 10
-        return current_score + points
-
-    if outcome == "Too High":
-        if attempt_number % 2 == 0:
-            return current_score + 5
-        return current_score - 5
-
-    if outcome == "Too Low":
-        return current_score - 5
-
-    return current_score
+from logic_utils import get_range_for_difficulty, parse_guess, check_guess, update_score, save_game_score, HINT_MESSAGES
 
 st.set_page_config(page_title="Glitchy Guesser", page_icon="🎮")
+
+
+def get_streak(score_history: list) -> tuple[int, str]:
+    """
+    Return (streak_length, streak_type) derived from score_history.
+
+    Counts how many of the most recent games share the same outcome.
+
+    Returns:
+        tuple: (count, "win") | (count, "loss") | (0, "none")
+    """
+    if not score_history:
+        return 0, "none"
+    last_outcome = score_history[-1]["outcome"]
+    count = 0
+    for record in reversed(score_history):
+        if record["outcome"] == last_outcome:
+            count += 1
+        else:
+            break
+    streak_type = "win" if last_outcome == "won" else "loss"
+    return count, streak_type
+
+
+def render_streak_banner(streak_length: int, streak_type: str) -> None:
+    """Inject a CSS-animated streak banner above the game."""
+    if streak_length < 2:
+        return
+
+    if streak_type == "win":
+        emoji = "🔥" * min(streak_length, 5)
+        label = f"WIN STREAK  ×{streak_length}"
+        css = """
+        @keyframes fire-pulse {
+            0%   { box-shadow: 0 0 8px #ff4500, 0 0 20px #ff6600; }
+            50%  { box-shadow: 0 0 20px #ff0000, 0 0 40px #ff4500; }
+            100% { box-shadow: 0 0 8px #ff4500, 0 0 20px #ff6600; }
+        }
+        .streak-banner {
+            animation: fire-pulse 1.2s ease-in-out infinite;
+            background: linear-gradient(135deg, #ff4500 0%, #ff8c00 50%, #ffd700 100%);
+            border-radius: 12px;
+            padding: 14px 20px;
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 0.05em;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+            margin-bottom: 8px;
+        }
+        """
+    else:
+        emoji = "❄️" * min(streak_length, 5)
+        label = f"LOSS STREAK  ×{streak_length}"
+        css = """
+        @keyframes ice-pulse {
+            0%   { box-shadow: 0 0 8px #00bfff, 0 0 20px #1e90ff; }
+            50%  { box-shadow: 0 0 20px #87cefa, 0 0 40px #00bfff; }
+            100% { box-shadow: 0 0 8px #00bfff, 0 0 20px #1e90ff; }
+        }
+        .streak-banner {
+            animation: ice-pulse 1.6s ease-in-out infinite;
+            background: linear-gradient(135deg, #0a2a6e 0%, #1565c0 50%, #82b1ff 100%);
+            border-radius: 12px;
+            padding: 14px 20px;
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #e3f2fd;
+            letter-spacing: 0.05em;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+            margin-bottom: 8px;
+        }
+        """
+
+    st.markdown(
+        f"<style>{css}</style>"
+        f'<div class="streak-banner">{emoji}  {label}  {emoji}</div>',
+        unsafe_allow_html=True,
+    )
+
 
 st.title("🎮 Game Glitch Investigator")
 st.caption("An AI-generated guessing game. Something is off.")
@@ -89,6 +109,18 @@ low, high = get_range_for_difficulty(difficulty)
 st.sidebar.caption(f"Range: {low} to {high}")
 st.sidebar.caption(f"Attempts allowed: {attempt_limit}")
 
+st.sidebar.divider()
+st.sidebar.subheader("Past Games")
+if st.session_state.get("score_history"):
+    for record in reversed(st.session_state.score_history):
+        icon = "✅" if record["outcome"] == "won" else "❌"
+        st.sidebar.caption(
+            f"{icon} Game {record['game']} · {record['difficulty']} · "
+            f"Score: {record['score']} · Attempts: {record['attempts']}"
+        )
+else:
+    st.sidebar.caption("No games played yet.")
+
 if "secret" not in st.session_state:
     st.session_state.secret = random.randint(low, high)
 
@@ -103,6 +135,12 @@ if "status" not in st.session_state:
 
 if "history" not in st.session_state:
     st.session_state.history = []
+
+if "score_history" not in st.session_state:
+    st.session_state.score_history = []
+
+streak_length, streak_type = get_streak(st.session_state.score_history)
+render_streak_banner(streak_length, streak_type)
 
 st.subheader("Make a guess")
 
@@ -132,9 +170,10 @@ with col3:
     show_hint = st.checkbox("Show hint", value=True)
 
 if new_game:
-    st.session_state.attempts = 0
-    st.session_state.secret = random.randint(1, 100)
-    st.success("New game started.")
+    st.session_state.attempts = 1
+    st.session_state.secret = random.randint(low, high)
+    st.session_state.status = "playing"
+    st.session_state.history = []
     st.rerun()
 
 if st.session_state.status != "playing":
@@ -155,12 +194,8 @@ if submit:
     else:
         st.session_state.history.append(guess_int)
 
-        if st.session_state.attempts % 2 == 0:
-            secret = str(st.session_state.secret)
-        else:
-            secret = st.session_state.secret
-
-        outcome, message = check_guess(guess_int, secret)
+        outcome = check_guess(guess_int, st.session_state.secret)
+        message = HINT_MESSAGES[outcome]
 
         if show_hint:
             st.warning(message)
@@ -174,6 +209,13 @@ if submit:
         if outcome == "Win":
             st.balloons()
             st.session_state.status = "won"
+            st.session_state.score_history = save_game_score(
+                st.session_state.score_history,
+                score=st.session_state.score,
+                outcome="won",
+                attempts=st.session_state.attempts,
+                difficulty=difficulty,
+            )
             st.success(
                 f"You won! The secret was {st.session_state.secret}. "
                 f"Final score: {st.session_state.score}"
@@ -181,6 +223,13 @@ if submit:
         else:
             if st.session_state.attempts >= attempt_limit:
                 st.session_state.status = "lost"
+                st.session_state.score_history = save_game_score(
+                    st.session_state.score_history,
+                    score=st.session_state.score,
+                    outcome="lost",
+                    attempts=st.session_state.attempts,
+                    difficulty=difficulty,
+                )
                 st.error(
                     f"Out of attempts! "
                     f"The secret was {st.session_state.secret}. "
