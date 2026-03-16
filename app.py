@@ -8,7 +8,7 @@ def get_range_for_difficulty(difficulty: str):
         return 1, 100
     if difficulty == "Hard":
         return 1, 50
-    return 0, 100
+    return 1, 100
 
 
 def parse_guess(raw: str):

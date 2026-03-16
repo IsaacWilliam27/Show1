@@ -5,10 +5,13 @@ Answer each question in 3 to 5 sentences. Be specific and honest about what actu
 ## 1. What was broken when you started?
 
 - What did the game look like the first time you ran it?
+- The 
 - List at least two concrete bugs you noticed at the start  
   (for example: "the secret number kept changing" or "the hints were backwards").
 
----
+- The first concrete bug :   The hints were totally wrong . Example : The range is from 1 to 100 but even if i entered 1 it says to go lower 
+
+- Second Bug is that the hints dont  match and the hints kept changing randomly 
 
 ## 2. How did you use AI as a teammate?
 
